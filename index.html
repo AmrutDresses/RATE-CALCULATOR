@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Rate Calculator V4</title>
+    <style>
+        /* CSS from previous version remains the same */
+        body { font-family: sans-serif; padding: 20px; }
+        input { padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .input-group { margin-bottom: 15px; }
+        button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        #calculateBtn { background-color: #007bff; color: white; }
+        #calculateBtn:hover { background-color: #0056b3; }
+        #copyBtn { background-color: #25d366; color: white; display: none; }
+        #copyBtn:hover { background-color: #128c7e; }
+        #resultTable { margin-top: 20px; border-collapse: collapse; width: 100%; }
+        #resultTable th, #resultTable td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        #resultTable th { background-color: #f2f2f2; }
+        .error { color: red; margin-top: 10px; }
+        #whatsappTextDisplay {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px dashed #25d366;
+            background-color: #f0fff0;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Dynamic Price Calculator</h2>
+
+    <div class="input-group">
+        <label for="baseRate">Base Rate (Cost per meter in Rs.):</label><br>
+        <input type="number" id="baseRate" placeholder="e.g., 1000" min="1" required><br>
+
+        <label for="startProfit">Start Profit Percentage (at 2m):</label><br>
+        <input type="number" id="startProfit" placeholder="e.g., 100" min="1" required><br>
+        
+        <label for="endProfit">Min Profit Percentage (at MOQ):</label><br>
+        <input type="number" id="endProfit" placeholder="e.g., 15" min="1" required><br>
+
+        <label for="moq">MOQ (Minimum Order Quantity in meters):</label><br>
+        <input type="number" id="moq" placeholder="e.g., 10" min="2" required><br>
+
+        <button id="calculateBtn" onclick="calculateRates()">Calculate Rates</button>
+        <button id="copyBtn" onclick="copyForWhatsApp()">✅ Copy for WhatsApp</button>
+
+        <p class="error" id="errorMessage"></p>
+    </div>
+
+    <div id="resultsContainer">
+        </div>
+
+    <h3>WhatsApp Text Preview:</h3>
+    <div id="whatsappTextDisplay">
+        Your price list will appear here after calculation.
+    </div>
+
+    <script>
+        let finalReplyText = '';
+
+        /**
+         * Rounds a number up to the nearest multiple of 5.
+         */
+        function roundUpToNearestFive(num) {
+            return Math.ceil(num / 5) * 5;
+        }
+
+        function calculateRates() {
+            const rate = parseFloat(document.getElementById('baseRate').value);
+            const startProfitPercent = parseFloat(document.getElementById('startProfit').value); 
+            // NEW: Get the user-defined minimum profit
+            const endProfitPercent = parseFloat(document.getElementById('endProfit').value); 
+            const moq = parseInt(document.getElementById('moq').value);
+            
+            const errorMessage = document.getElementById('errorMessage');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const copyBtn = document.getElementById('copyBtn');
+            const whatsappTextDisplay = document.getElementById('whatsappTextDisplay');
+
+            // --- Input Validation ---
+            if (isNaN(rate) || rate <= 0 || 
+                isNaN(moq) || moq < 2 || 
+                isNaN(startProfitPercent) || startProfitPercent < 1 ||
+                isNaN(endProfitPercent) || endProfitPercent < 1) {
+                
+                errorMessage.textContent = 'Please enter valid numbers for all fields (all must be > 0, MOQ >= 2).';
+                resultsContainer.innerHTML = '';
+                copyBtn.style.display = 'none';
+                whatsappTextDisplay.textContent = 'Your price list will appear here after calculation.';
+                finalReplyText = '';
+                return;
+            }
+
+            // NEW: Check if start profit is greater than end profit for a reducing rate
+            if (startProfitPercent <= endProfitPercent) {
+                errorMessage.textContent = 'Start Profit Percentage must be greater than Min Profit Percentage for the rate to decrease.';
+                resultsContainer.innerHTML = '';
+                copyBtn.style.display = 'none';
+                whatsappTextDisplay.textContent = 'Your price list will appear here after calculation.';
+                finalReplyText = '';
+                return;
+            }
+
+            errorMessage.textContent = '';
+            
+            // --- Calculation Logic ---
+            const startQty = 2;
+            
+            // Total range of quantities: (MOQ - 2)
+            const qtyRange = moq - startQty;
+            
+            // Total profit reduction: (Start Profit) - (Min Profit)
+            const totalProfitReduction = startProfitPercent - endProfitPercent; 
+            
+            // Profit reduction per quantity step (m)
+            const stepReduction = qtyRange > 0 ? totalProfitReduction / qtyRange : 0;
+            
+            let tableHTML = '<h3>Calculated Rates:</h3>';
+            tableHTML += '<table id="resultTable"><thead><tr><th>Quantity (m)</th><th>Profit %</th><th>Raw Rate (Rs.)</th><th>Final Rate (Rs.)</th></tr></thead><tbody>';
+            
+            let whatsappMessage = "✨ **Special Bulk Pricing Offer!** ✨\n\n";
+            
+            for (let q = startQty; q <= moq; q++) {
+                const steps = q - startQty;
+                
+                // Calculate the current profit percentage
+                const currentProfitPercent = startProfitPercent - (steps * stepReduction);
+                
+                // Rate Calculation: Base Rate + (Base Rate * Profit Percentage / 100)
+                const rawRatePerMeter = rate + (rate * (currentProfitPercent / 100));
+                
+                // Rounding the rate to the nearest multiple of 5
+                const finalRateRounded = roundUpToNearestFive(rawRatePerMeter);
+
+                // Create the reply text segment
+                const replyText = `Buy ${q} m or more at *${finalRateRounded} Rs.* per meter`;
+                
+                // Add row to the table
+                tableHTML += `<tr>
+                    <td>${q} m or more</td>
+                    <td>${currentProfitPercent.toFixed(2)}%</td>
+                    <td>${rawRatePerMeter.toFixed(2)}</td>
+                    <td>**${finalRateRounded.toFixed(2)}**</td>
+                </tr>`;
+
+                // Add to the WhatsApp message text
+                whatsappMessage += replyText + "\n";
+            }
+            
+            tableHTML += '</tbody></table>';
+            
+            // Store and display the final text
+            finalReplyText = whatsappMessage + "\n_Limited stock. Shop now!_";
+            resultsContainer.innerHTML = tableHTML;
+            whatsappTextDisplay.textContent = finalReplyText;
+            copyBtn.style.display = 'inline-block'; // Show the copy button
+        }
+
+        /**
+         * Copies the generated reply text to the user's clipboard.
+         */
+        function copyForWhatsApp() {
+            if (finalReplyText) {
+                // ... (Clipboard copy function remains the same)
+                navigator.clipboard.writeText(finalReplyText).then(() => {
+                    alert('Successfully copied the price list for WhatsApp!');
+                    const copyBtn = document.getElementById('copyBtn');
+                    copyBtn.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = '✅ Copy for WhatsApp';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                    alert('Error: Could not copy text automatically. Please copy the text from the "WhatsApp Text Preview" box manually.');
+                });
+            } else {
+                alert('Please calculate the rates first.');
+            }
+        }
+    </script>
+</body>
+</html>
